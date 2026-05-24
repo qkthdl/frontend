@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { fetchRoomSessions, fetchCalendarEvents } from '../services/roomApi'
 import { getMeetingReport } from '../services/meetingReportService'
+import { fetchLibraryItems } from '../services/libraryApi'
 import {
   Star,
   Video,
@@ -25,6 +26,7 @@ export default function ChannelHome({ setActiveView, roomName, channelId, onOpen
   const [upcomingEvents, setUpcomingEvents] = useState([])
   const [mostRecentReport, setMostRecentReport] = useState(null)
   const [isReportLoading, setIsReportLoading] = useState(false)
+  const [libraryItems, setLibraryItems] = useState([])
 
   useEffect(() => {
     if (roomName) {
@@ -51,6 +53,13 @@ export default function ChannelHome({ setActiveView, roomName, channelId, onOpen
           }
         })
         .catch(err => console.error("Failed to load events", err))
+      // Fetch Library Items
+      fetchLibraryItems(roomName).then((res) => {
+        if (res.ok && res.items) {
+          setLibraryItems(res.items)
+        }
+      }).catch((e) => console.error("Failed to load library items:", e))
+
     }
   }, [roomName, channelId])
 
@@ -218,13 +227,13 @@ export default function ChannelHome({ setActiveView, roomName, channelId, onOpen
               <div className="flex items-center justify-between mb-6">
                 <div className="flex gap-2">
                   <span className="px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-[13px] font-bold cursor-pointer">
-                    전체 28
+                    전체 {libraryItems.length}
                   </span>
                   <span className="px-4 py-1.5 border border-gray-200 text-gray-500 rounded-full text-[13px] font-bold cursor-pointer hover:bg-gray-50">
-                    회의 자료 18
+                    회의 자료 {libraryItems.filter(i => i.kind !== 'STT' && i.kind !== 'TXT').length}
                   </span>
                   <span className="px-4 py-1.5 border border-gray-200 text-gray-500 rounded-full text-[13px] font-bold cursor-pointer hover:bg-gray-50">
-                    STT 10
+                    STT {libraryItems.filter(i => i.kind === 'STT' || i.kind === 'TXT').length}
                   </span>
                 </div>
 
@@ -244,10 +253,32 @@ export default function ChannelHome({ setActiveView, roomName, channelId, onOpen
               </div>
 
               <div className="grid grid-cols-4 gap-4">
-                <FileCard type="PDF" color="bg-rose-500" title="신제품 UI 리뷰 자료.pdf" date="2026.05.01" author="김서연" size="2.4MB" />
-                <FileCard type="TXT" color="bg-blue-500" title="디자인 시스템 논의_STT.txt" date="2026.04.30" author="박준호" size="1.1MB" />
-                <FileCard type="PPT" color="bg-amber-500" title="프로젝트A 킥오프 발표.pptx" date="2026.04.28" author="이하은" size="5.3MB" />
-                <FileCard type="IMG" color="bg-indigo-500" title="아이콘 레퍼런스.png" date="2026.04.25" author="최지우" size="3.2MB" />
+                {libraryItems.length > 0 ? (
+                  libraryItems.map((item) => {
+                    let color = 'bg-gray-500'
+                    if (item.kind === 'PDF') color = 'bg-rose-500'
+                    if (item.kind === 'TXT' || item.kind === 'STT') color = 'bg-blue-500'
+                    if (item.kind === 'PPT') color = 'bg-amber-500'
+                    if (item.kind === 'IMG') color = 'bg-indigo-500'
+                    
+                    const dateObj = new Date(item.created_at)
+                    const dateStr = `${dateObj.getFullYear()}.${String(dateObj.getMonth() + 1).padStart(2, '0')}.${String(dateObj.getDate()).padStart(2, '0')}`
+
+                    return (
+                      <FileCard 
+                        key={item.id} 
+                        type={item.kind} 
+                        color={color} 
+                        title={item.name} 
+                        date={dateStr} 
+                        author={item.created_by || '팀원'} 
+                        size={item.size || '0MB'} 
+                      />
+                    )
+                  })
+                ) : (
+                  <div className="col-span-4 text-sm text-gray-500 py-6 text-center border border-gray-100 rounded-2xl bg-gray-50/50">자료가 없습니다.</div>
+                )}
               </div>
             </section>
             

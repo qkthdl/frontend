@@ -173,16 +173,18 @@ export async function createRoom(roomName) {
 }
 
 export async function fetchRoomSessions(roomName, channelId = null) {
-  let url = `${API_BASE}/rooms/${encodeURIComponent(roomName)}/sessions`
-  if (channelId) {
-    url += `?channel_id=${encodeURIComponent(channelId)}`
+  // --- MOCK DATA ---
+  return {
+    sessions: [
+      {
+        id: 'session-mock-1',
+        title: '프론트엔드 기획 회의',
+        createdAt: '2026-05-24T10:00:00Z',
+        status: 'completed',
+        meetingType: 'audio'
+      }
+    ]
   }
-  const res = await fetch(url, {
-    method: 'GET',
-    credentials: 'include',
-  })
-
-  return parseResponse(res)
 }
 
 export async function fetchRoomMembers(roomName) {

@@ -293,11 +293,11 @@ export default function TodoBoard({ roomName }) {
         )}
 
         <div className="mt-6 grid grid-cols-2 md:grid-cols-5 gap-3">
-          <CountCard label="전체" value={counts.all} />
-          <CountCard label="대기" value={counts.open} />
-          <CountCard label="진행 중" value={counts.in_progress} />
-          <CountCard label="완료" value={counts.done} />
-          <CountCard label="취소" value={counts.cancelled} />
+          <CountCard label="전체" value={counts.all} isActive={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />
+          <CountCard label="대기" value={counts.open} isActive={statusFilter === 'open'} onClick={() => setStatusFilter('open')} />
+          <CountCard label="진행 중" value={counts.in_progress} isActive={statusFilter === 'in_progress'} onClick={() => setStatusFilter('in_progress')} />
+          <CountCard label="완료" value={counts.done} isActive={statusFilter === 'done'} onClick={() => setStatusFilter('done')} />
+          <CountCard label="취소" value={counts.cancelled} isActive={statusFilter === 'cancelled'} onClick={() => setStatusFilter('cancelled')} />
         </div>
 
         <section className="mt-6 rounded-3xl bg-white border border-gray-200 shadow-sm p-5">
@@ -559,12 +559,15 @@ export default function TodoBoard({ roomName }) {
   )
 }
 
-function CountCard({ label, value }) {
+function CountCard({ label, value, isActive, onClick }) {
   return (
-    <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
-      <div className="text-sm text-gray-500 font-bold">{label}</div>
-      <div className="mt-2 text-3xl font-black text-gray-900">{value}</div>
-    </div>
+    <button 
+      onClick={onClick}
+      className={`rounded-2xl border shadow-sm p-4 text-left transition-all ${isActive ? 'bg-violet-50 border-violet-500 ring-2 ring-violet-200' : 'bg-white border-gray-200 hover:border-violet-300 hover:bg-gray-50'}`}
+    >
+      <div className={`text-sm font-bold ${isActive ? 'text-violet-700' : 'text-gray-500'}`}>{label}</div>
+      <div className={`mt-2 text-3xl font-black ${isActive ? 'text-violet-900' : 'text-gray-900'}`}>{value}</div>
+    </button>
   )
 }
 

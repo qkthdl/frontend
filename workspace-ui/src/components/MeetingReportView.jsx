@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Bot, Clock, FileText, Loader2, Network, RefreshCw, Sparkles, CheckSquare, Square, Calendar, User, Edit2, ChevronDown, Plus, CheckCircle2, Check, Users, ArrowRight, ChevronLeft, MoreHorizontal } from 'lucide-react'
-import { getSessionTodos, createTodo, updateTodo } from '../services/todoCalendarApi'
 import { getMeetingReport, regenerateMeetingReport, getMeetingTranscript } from '../services/meetingReportService'
 import { fetchRoomSessions } from '../services/roomApi'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import HwpTemplateReportBox from './HwpTemplateReportBox'
 
 const groupSessionsByDate = (sessionsList) => {
   const groups = {}
@@ -63,94 +63,7 @@ export default function MeetingReportView({ roomName, channelId, sessionId }) {
   const [errorText, setErrorText] = useState('')
   const [activeTab, setActiveTab] = useState('summary')
   const [isSttOpen, setIsSttOpen] = useState(false)
-  const [todoTab, setTodoTab] = useState('ai')
-  const [isAddingTodo, setIsAddingTodo] = useState(false)
-  
-  const [aiTodos, setAiTodos] = useState([])
-  const [registeredTodos, setRegisteredTodos] = useState([])
-  const [newTodo, setNewTodo] = useState({ title: '', dueDate: '', priority: 'medium' })
 
-  const loadTodos = async () => {
-    if (!activeSessionId) return
-    try {
-      const data = await getSessionTodos(activeSessionId)
-      const dbTodos = data?.todos || []
-      
-      let suggested = dbTodos.filter(t => t.status === 'suggested').map(t => ({ ...t, selected: true }))
-      const registered = dbTodos.filter(t => t.status !== 'suggested')
-      
-      if (suggested.length === 0 && report?.todoItems && report.todoItems.length > 0) {
-        suggested = report.todoItems.map(t => ({ ...t, status: 'suggested', selected: true }))
-      }
-      
-      if (suggested.length === 0 && report?.minutesMarkdown) {
-        const todoMatch = report.minutesMarkdown.match(/## 2\. To-Do([\s\S]*?)(?=## 3\. AI 사용 시점|$)/)
-        if (todoMatch && todoMatch[1]) {
-          const lines = todoMatch[1].split('\n').filter(l => l.trim().startsWith('-'))
-          suggested = lines.map((line, idx) => ({
-            id: `extracted-${idx}`,
-            title: line.replace(/^- /, '').replace(/\[.*?\]/, '').trim(),
-            assignee: 'team',
-            priority: 'medium',
-            date: line.match(/\[(.*?)\]/) ? line.match(/\[(.*?)\]/)[1] : '-',
-            status: 'suggested',
-            selected: true
-          }))
-        }
-      }
-
-      setAiTodos(suggested)
-      setRegisteredTodos(registered)
-    } catch (e) {
-      console.error('Failed to load todos:', e)
-    }
-  }
-
-  useEffect(() => {
-    if (activeSessionId && report) {
-      loadTodos()
-    }
-  }, [activeSessionId, report])
-
-  const toggleAiTodo = (id) => {
-    setAiTodos(prev => prev.map(t => t.id === id ? { ...t, selected: !t.selected } : t))
-  }
-
-  const handleAddTodo = async () => {
-    if (!newTodo.title.trim()) return
-    try {
-      await createTodo({
-        roomName: roomName || 'default_room',
-        channelId: channelId,
-        sessionId: activeSessionId,
-        title: newTodo.title,
-        dueDate: newTodo.dueDate,
-        priority: newTodo.priority,
-        assigneeType: 'team',
-      })
-      setIsAddingTodo(false)
-      setTodoTab('registered')
-      setNewTodo({ title: '', dueDate: '', priority: 'medium' })
-      loadTodos()
-    } catch (e) {
-      alert(e.message)
-    }
-  }
-
-  const handleRegisterSelectedAiTodos = async () => {
-    const selected = aiTodos.filter(t => t.selected)
-    if (!selected.length) return
-    
-    try {
-      await Promise.all(selected.map(t => 
-        updateTodo(t.id, { status: 'open' })
-      ))
-      setTodoTab('registered')
-      loadTodos()
-    } catch (e) {
-      alert('등록 중 오류가 발생했습니다: ' + e.message)
-    }
-  }
 
   useEffect(() => {
     if (sessionId) setActiveSessionId(sessionId)
@@ -432,7 +345,7 @@ export default function MeetingReportView({ roomName, channelId, sessionId }) {
                 onClick={() => setActiveTab('details')}
                 className={`pb-3 text-[15px] font-bold border-b-[3px] transition-all -mb-[2px] ${activeTab === 'details' ? 'border-violet-600 text-violet-600' : 'border-transparent text-gray-400 hover:text-gray-700'}`}
               >
-                상세 회의록
+                회의록 생성
               </button>
             </div>
           </header>
@@ -661,142 +574,8 @@ export default function MeetingReportView({ roomName, channelId, sessionId }) {
               </div>
 
 
-              {/* 오른쪽 영역 (To-Do & 첨부파일) */}
+              {/* 오른쪽 영역 (첨부파일) */}
               <aside className="space-y-6 min-w-[360px]">
-                {/* To-Do 리스트 */}
-                <section className="bg-white rounded-3xl border border-gray-200 shadow-sm flex flex-col xl:sticky xl:top-6 min-h-[600px] max-h-[calc(100vh-120px)]">
-                  <div className="p-6 pb-0 shrink-0">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
-                        <CheckSquare className="w-5 h-5 text-violet-600" /> To-Do
-                      </h3>
-                    </div>
-                    
-                    <div className="flex items-center gap-2 border-b border-gray-100 w-full">
-                      <button 
-                        onClick={() => setTodoTab('ai')}
-                        className={`flex-1 pb-3 text-sm font-bold border-b-2 transition-colors ${todoTab === 'ai' ? 'border-violet-600 text-violet-600' : 'border-transparent text-gray-500 hover:text-gray-900'}`}
-                      >
-                        AI 추천 ({aiTodos.length})
-                      </button>
-                      <button 
-                        onClick={() => setTodoTab('registered')}
-                        className={`flex-1 pb-3 text-sm font-bold border-b-2 transition-colors ${todoTab === 'registered' ? 'border-violet-600 text-violet-600' : 'border-transparent text-gray-500 hover:text-gray-900'}`}
-                      >
-                        등록된 To-Do ({registeredTodos.length})
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto p-6 custom-scrollbar relative">
-                    {isAddingTodo ? (
-                      <div className="h-full flex flex-col">
-                        <div className="flex items-center gap-2 mb-6">
-                          <button onClick={() => setIsAddingTodo(false)} className="text-gray-500 hover:text-gray-900 px-2 py-1 -ml-2">
-                            ←
-                          </button>
-                          <h4 className="font-bold text-gray-900">직접 To-Do 추가</h4>
-                        </div>
-                        
-                        <div className="space-y-4 flex-1">
-                          <div>
-                            <label className="block text-xs font-bold text-gray-700 mb-1.5">작업 이름</label>
-                            <input type="text" value={newTodo.title} onChange={e => setNewTodo({...newTodo, title: e.target.value})} placeholder="작업 내용을 입력하세요" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 text-sm" />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-bold text-gray-700 mb-1.5">마감 기한</label>
-                            <input type="date" value={newTodo.dueDate} onChange={e => setNewTodo({...newTodo, dueDate: e.target.value})} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 text-sm text-gray-700" />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-bold text-gray-700 mb-1.5">우선 순위</label>
-                            <select value={newTodo.priority} onChange={e => setNewTodo({...newTodo, priority: e.target.value})} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 text-sm text-gray-700">
-                              <option value="high">높음 (High)</option>
-                              <option value="medium">중간 (Medium)</option>
-                              <option value="low">낮음 (Low)</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="mt-6 flex gap-3">
-                          <button onClick={() => setIsAddingTodo(false)} className="flex-1 py-3.5 rounded-xl border border-gray-200 font-bold text-sm text-gray-600 hover:bg-gray-50">취소</button>
-                          <button onClick={handleAddTodo} className="flex-1 py-3.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-sm shadow-sm transition-colors">추가하기</button>
-                        </div>
-                      </div>
-                    ) : todoTab === 'ai' ? (
-                      <>
-                        <div className="flex items-center justify-end mb-4">
-                          <button 
-                            className="text-[13px] font-bold text-violet-600 hover:text-violet-700"
-                            onClick={() => {
-                              const allSelected = aiTodos.every(t => t.selected);
-                              setAiTodos(prev => prev.map(t => ({...t, selected: !allSelected})));
-                            }}
-                          >
-                            전체 선택
-                          </button>
-                        </div>
-                        
-                        <div className="space-y-3 pb-24">
-                          {aiTodos.map(todo => (
-                            <div key={todo.id} className={`p-4 rounded-2xl border transition-colors flex items-center gap-3 ${todo.selected ? 'border-violet-200 bg-white shadow-sm' : 'border-gray-100 bg-gray-50'}`}>
-                              <button onClick={() => toggleAiTodo(todo.id)} className="shrink-0 flex items-center justify-center w-5 h-5 rounded-full overflow-hidden border border-gray-300">
-                                {todo.selected ? (
-                                  <div className="w-full h-full bg-violet-600 flex items-center justify-center border-violet-600">
-                                    <Check className="w-3.5 h-3.5 text-white stroke-[3]" />
-                                  </div>
-                                ) : (
-                                  <div className="w-full h-full bg-white" />
-                                )}
-                              </button>
-                              <div className="flex-1 min-w-0">
-                                <h4 className={`text-sm font-bold truncate mb-2 ${todo.selected ? 'text-gray-900' : 'text-gray-500'}`}>{todo.title}</h4>
-                                <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
-                                  <span className="flex items-center gap-1 font-semibold text-gray-600"><Calendar className="w-3.5 h-3.5" /> {todo.date || '날짜 미정'}</span>
-                                  <PriorityBadge level={todo.priority} />
-                                </div>
-                              </div>
-                              <button className="shrink-0 p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors">
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="absolute bottom-0 left-0 right-0 p-5 bg-white border-t border-gray-100 flex flex-col gap-3 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.02)] rounded-b-3xl">
-                          <button onClick={() => setIsAddingTodo(true)} className="w-full h-10 rounded-xl border border-gray-200 text-gray-600 font-bold text-[13px] flex items-center justify-center gap-1.5 hover:bg-gray-50 transition-colors">
-                            <Plus className="w-4 h-4" /> 직접 추가
-                          </button>
-                          <button onClick={handleRegisterSelectedAiTodos} className="w-full h-12 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-[13px] shadow-md transition-all">
-                            선택 항목 To-Do로 등록 ({aiTodos.filter(t => t.selected).length})
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="space-y-3">
-                        {registeredTodos.map(todo => (
-                          <div key={todo.id} className="p-4 rounded-2xl border border-gray-200 bg-white shadow-sm flex items-center gap-3">
-                            <div className="flex-1 min-w-0">
-                              <h4 className="text-sm font-bold text-gray-900 truncate mb-2">{todo.title}</h4>
-                              <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
-                                <span className="flex items-center gap-1 font-semibold text-gray-600"><Calendar className="w-3.5 h-3.5" /> {todo.date || '날짜 미정'}</span>
-                                <PriorityBadge level={todo.priority} />
-                              </div>
-                            </div>
-                            <button className="shrink-0 p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50 transition-colors">
-                               <Edit2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
-                        {registeredTodos.length === 0 && (
-                          <div className="text-sm text-gray-500 text-center mt-10">
-                            등록된 To-Do가 없습니다.
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </section>
-
                 {/* 첨부파일 (placeholder) */}
                 <section className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6">
                   <div className="flex items-center gap-2 mb-4">
@@ -835,8 +614,10 @@ export default function MeetingReportView({ roomName, channelId, sessionId }) {
         ) : report && activeTab === 'details' ? (
           <main className="flex-1 min-h-0 overflow-y-auto p-8">
             <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-10 max-w-[1000px] mx-auto">
+              <HwpTemplateReportBox sessionId={sessionId} roomName={report?.roomName || report?.room_name || ''} />
+
               {/* 마크다운 회의록 */}
-              <div className="prose prose-violet max-w-none mb-12">
+              <div className="prose prose-violet max-w-none mb-12 mt-8">
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm]}
                   components={{
