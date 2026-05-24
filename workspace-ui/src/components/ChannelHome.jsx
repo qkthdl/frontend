@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { fetchRoomSessions, fetchCalendarEvents } from '../services/roomApi'
+import { getMeetingReport } from '../services/meetingReportService'
 import {
   Star,
   Video,
@@ -11,13 +12,19 @@ import {
   LayoutGrid,
   List,
   ChevronLeft,
-  Plus
+  Plus,
+  ArrowRight,
+  Clock,
+  Check,
+  Loader2
 } from 'lucide-react'
 
 export default function ChannelHome({ setActiveView, roomName, channelId, onOpenReport }) {
   const [activeTab, setActiveTab] = useState('home')
   const [recentMeetings, setRecentMeetings] = useState([])
   const [upcomingEvents, setUpcomingEvents] = useState([])
+  const [mostRecentReport, setMostRecentReport] = useState(null)
+  const [isReportLoading, setIsReportLoading] = useState(false)
 
   useEffect(() => {
     if (roomName) {
@@ -25,6 +32,14 @@ export default function ChannelHome({ setActiveView, roomName, channelId, onOpen
         .then(data => {
           if (data?.sessions) {
             setRecentMeetings(data.sessions)
+            if (data.sessions.length > 0) {
+              const latestSession = data.sessions[0]
+              setIsReportLoading(true)
+              getMeetingReport(latestSession.id)
+                .then(report => setMostRecentReport(report))
+                .catch(err => console.error("Failed to load latest meeting report", err))
+                .finally(() => setIsReportLoading(false))
+            }
           }
         })
         .catch(err => console.error("Failed to load meetings", err))
@@ -48,17 +63,98 @@ export default function ChannelHome({ setActiveView, roomName, channelId, onOpen
           {/* Left Column */}
           <div className="space-y-8 min-w-0">
             
+            {/* 가장 최근 회의 */}
+            {recentMeetings.length > 0 && (
+              <section className="bg-white rounded-3xl p-7 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.05)] border border-gray-100 relative overflow-hidden">
+                <div className="inline-flex items-center justify-center px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold mb-6">가장 최근 회의</div>
+                
+                {(() => {
+                  const latest = recentMeetings[0];
+                  const dateObj = new Date(latest.createdAt);
+                  const month = `${dateObj.getMonth() + 1}.${String(dateObj.getDate()).padStart(2, '0')}`;
+                  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+                  const day = dayNames[dateObj.getDay()];
+                  
+                  let duration = '시간 미상';
+                  if (latest.meetingTime) {
+                    const timeParts = latest.meetingTime.split('T');
+                    if (timeParts.length > 1) {
+                      duration = timeParts[1].substring(0, 5);
+                    } else {
+                      duration = latest.meetingTime;
+                    }
+                  }
+
+                  return (
+                    <div className="flex flex-col gap-6">
+                      <div className="flex gap-8">
+                        <div className="w-24 h-28 rounded-2xl bg-white border border-indigo-100 flex flex-col items-center justify-center shrink-0 shadow-sm shadow-indigo-100/50">
+                          <span className="text-3xl font-black text-indigo-600 tracking-tight mb-1">{month}</span>
+                          <span className="text-sm font-bold text-indigo-500">{day}요일</span>
+                        </div>
+                        
+                        <div className="flex-1">
+                          <h2 className="text-2xl font-black text-gray-900 mb-3">{latest.title}</h2>
+                          <div className="flex items-center gap-4 text-sm text-gray-500 font-medium mb-6">
+                            <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" /> {duration}</span>
+                          </div>
+                          
+                          <div className="mt-2">
+                            <h3 className="text-sm font-bold text-indigo-600 mb-3">요약</h3>
+                            <div className="text-[13px] text-gray-700 leading-relaxed min-h-[60px]">
+                              {isReportLoading ? (
+                                <span className="flex items-center gap-2 text-gray-400 font-medium">
+                                  <Loader2 className="w-4 h-4 animate-spin" /> 요약을 불러오는 중입니다...
+                                </span>
+                              ) : mostRecentReport?.meetingSummary?.summary ? (
+                                <ul className="list-disc pl-4 space-y-2 marker:text-gray-300">
+                                  {mostRecentReport.meetingSummary.summary.split('\n').map((line, idx) => {
+                                    const text = line.replace(/^- /, '').trim()
+                                    return text ? <li key={idx} className="font-medium text-gray-700">{text}</li> : null
+                                  })}
+                                </ul>
+                              ) : (
+                                <span className="text-gray-400 font-medium">요약된 내용이 없습니다.</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="hidden lg:flex shrink-0 w-32 h-32 items-center justify-center">
+                          <div className="w-24 h-24 bg-gradient-to-br from-indigo-100 to-purple-50 rounded-[24px] flex items-center justify-center shadow-inner relative transform rotate-6">
+                            <FileText className="w-10 h-10 text-indigo-400 opacity-80" />
+                            <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center shadow-lg border-2 border-white transform -rotate-6">
+                              <Check className="w-4 h-4 text-white stroke-[3]" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <button 
+                          onClick={() => onOpenReport?.(latest.id)}
+                          className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl shadow-[0_4px_14px_0_rgba(79,70,229,0.39)] hover:shadow-[0_6px_20px_rgba(79,70,229,0.23)] transition-all flex items-center gap-2 w-fit"
+                        >
+                          상세 보러가기 <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </section>
+            )}
+
             {/* 최근 회의 */}
             <section className="bg-white rounded-[24px] p-7 shadow-sm border border-gray-100">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="font-bold text-gray-900 text-lg">최근 회의</h2>
-                <button className="text-blue-500 font-bold text-sm">전체 보기</button>
+                <button className="text-blue-500 font-bold text-sm flex items-center gap-1 hover:text-blue-600">전체 회의 보기 <ChevronRight className="w-4 h-4"/></button>
               </div>
 
-                {recentMeetings.length === 0 ? (
-                  <div className="text-sm text-gray-500 py-4 text-center">진행된 회의가 없습니다.</div>
+                {recentMeetings.length <= 1 ? (
+                  <div className="text-sm text-gray-500 py-4 text-center">다른 최근 회의가 없습니다.</div>
                 ) : (
-                  recentMeetings.slice(0, 4).map(m => {
+                  recentMeetings.slice(1, 5).map(m => {
                     const dateObj = new Date(m.createdAt)
                     const month = `${dateObj.getMonth() + 1}.${String(dateObj.getDate()).padStart(2, '0')}`
                     const dayNames = ['일', '월', '화', '수', '목', '금', '토']
@@ -224,24 +320,27 @@ export default function ChannelHome({ setActiveView, roomName, channelId, onOpen
 
 function RecentMeetingItem({ month, day, title, time, people, onClick }) {
   return (
-    <div onClick={onClick} className="flex items-center justify-between p-4 rounded-2xl bg-[#f8f9ff] hover:bg-[#f0f3ff] transition-colors cursor-pointer group">
+    <div className="flex items-center justify-between p-4 bg-white border-b border-gray-100 hover:bg-gray-50 transition-colors group last:border-0">
       <div className="flex items-center gap-6">
         <div className="flex flex-col items-center justify-center min-w-[50px]">
-          <span className="text-indigo-600 font-black text-base">{month}</span>
-          <span className="text-indigo-400 text-xs font-bold">{day}</span>
+          <span className="text-indigo-600 font-black text-[15px]">{month}</span>
+          <span className="text-gray-400 text-[11px] font-bold">{day}요일</span>
         </div>
         
         <div>
           <div className="font-bold text-[14px] text-gray-900 mb-1">{title}</div>
           <div className="flex items-center gap-3 text-[12px] text-gray-500 font-medium">
             <span>{time}</span>
-            <span>{people}</span>
-            <span className="bg-indigo-100 text-indigo-500 px-2 py-0.5 rounded text-[10px] font-bold">회의록 있음</span>
           </div>
         </div>
       </div>
       
-      <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-500" />
+      <button 
+        onClick={onClick}
+        className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 text-gray-600 text-xs font-bold rounded-xl group-hover:bg-indigo-50 group-hover:text-indigo-600 group-hover:border-indigo-100 transition-all"
+      >
+        상세 보러가기 <ArrowRight className="w-3.5 h-3.5" />
+      </button>
     </div>
   )
 }

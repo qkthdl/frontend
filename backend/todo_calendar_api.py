@@ -77,6 +77,7 @@ def ensure_tables():
         CREATE TABLE IF NOT EXISTS todo_items (
             id TEXT PRIMARY KEY,
             room_name TEXT NOT NULL,
+            channel_id TEXT,
             session_id TEXT,
             title TEXT NOT NULL,
             description TEXT,
@@ -102,6 +103,7 @@ def ensure_tables():
         CREATE TABLE IF NOT EXISTS calendar_events (
             id TEXT PRIMARY KEY,
             room_name TEXT,
+            channel_id TEXT,
             scope TEXT NOT NULL,
             owner_user_id TEXT,
             title TEXT NOT NULL,
@@ -190,6 +192,7 @@ def normalize_todo(row):
     return {
         "id": d.get("id"),
         "roomName": d.get("room_name"),
+        "channelId": d.get("channel_id"),
         "sessionId": d.get("session_id"),
         "sessionTitle": d.get("session_title"),
         "title": d.get("title"),
@@ -216,6 +219,7 @@ def normalize_event(row):
     return {
         "id": d.get("id"),
         "roomName": d.get("room_name"),
+        "channelId": d.get("channel_id"),
         "scope": d.get("scope"),
         "ownerUserId": d.get("owner_user_id"),
         "title": d.get("title"),
@@ -243,6 +247,18 @@ class TodoUpdateRequest(BaseModel):
     assigneeType: Optional[str] = None
     assigneeName: Optional[str] = None
     calendarScope: Optional[str] = None
+    channelId: Optional[str] = None
+
+class TodoCreateRequest(BaseModel):
+    roomName: str
+    channelId: Optional[str] = None
+    sessionId: Optional[str] = None
+    title: str
+    description: Optional[str] = ""
+    assigneeType: Optional[str] = "team"
+    assigneeName: Optional[str] = None
+    priority: Optional[str] = "medium"
+    dueDate: Optional[str] = None
 
 
 class AddTodoToCalendarRequest(BaseModel):
@@ -258,6 +274,7 @@ class AddTodoToCalendarRequest(BaseModel):
 
 class CalendarEventCreateRequest(BaseModel):
     roomName: Optional[str] = None
+    channelId: Optional[str] = None
     scope: str = "personal"
     title: str
     description: Optional[str] = ""
@@ -277,6 +294,7 @@ def list_room_todos(
     status: str = Query("all"),
     week_label: str = Query("all"),
     session_id: str = Query("all"),
+    channel_id: Optional[str] = Query(None),
 ):
     ensure_tables()
 
@@ -289,6 +307,10 @@ def list_room_todos(
 
     where = ["t.room_name = ?"]
     params = [room_name]
+    
+    if channel_id:
+        where.append("t.channel_id = ?")
+        params.append(channel_id)
 
     if status != "all":
         where.append("t.status = ?")
@@ -426,7 +448,7 @@ def update_todo(todo_id: str, payload: TodoUpdateRequest, request: Request):
 
     require_room_member(conn, row["room_name"], user_id)
 
-    allowed_status = {"open", "in_progress", "done", "cancelled"}
+    allowed_status = {"open", "in_progress", "done", "cancelled", "suggested"}
     allowed_priority = {"low", "medium", "high"}
     allowed_scope = {"team", "personal"}
     allowed_assignee_type = {"team", "personal"}
@@ -505,6 +527,39 @@ def update_todo(todo_id: str, payload: TodoUpdateRequest, request: Request):
 
     return {"ok": True, "todo": normalize_todo(updated)}
 
+@router.post("/todo")
+def create_todo(payload: TodoCreateRequest, request: Request):
+    ensure_tables()
+    user = get_current_user(request)
+    user_id = get_user_id(user)
+    conn = get_conn()
+    require_room_member(conn, payload.roomName, user_id)
+    
+    todo_id = str(uuid.uuid4())
+    now = now_iso()
+    
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO todo_items (
+            id, room_name, channel_id, session_id, title, description,
+            assignee_type, assignee_name, priority, status, due_date,
+            created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (todo_id, payload.roomName, payload.channelId, payload.sessionId,
+         payload.title, payload.description, payload.assigneeType, payload.assigneeName,
+         payload.priority, "open", payload.dueDate, user_id, now, now)
+    )
+    conn.commit()
+    
+    row = cur.execute(
+        "SELECT * FROM todo_items WHERE id = ?", (todo_id,)
+    ).fetchone()
+    conn.close()
+    
+    return {"ok": True, "todo": normalize_todo(row)}
+
 
 @router.delete("/todo/{todo_id}")
 def delete_todo(todo_id: str, request: Request):
@@ -577,6 +632,7 @@ def add_todo_to_calendar(
         INSERT INTO calendar_events (
             id,
             room_name,
+            channel_id,
             scope,
             owner_user_id,
             title,
@@ -592,11 +648,12 @@ def add_todo_to_calendar(
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             event_id,
             todo["room_name"],
+            todo["channel_id"],
             scope,
             user_id if scope == "personal" else None,
             payload.title or todo["title"],
@@ -647,6 +704,7 @@ def add_todo_to_calendar(
 def list_calendar_events(
     request: Request,
     room_name: Optional[str] = Query(None),
+    channel_id: Optional[str] = Query(None),
     scope: str = Query("personal"),
     week_label: str = Query("all"),
     date_from: Optional[str] = Query(None),
@@ -706,6 +764,10 @@ def list_calendar_events(
     if date_to:
         where.append("start_date <= ?")
         params.append(date_to)
+
+    if channel_id:
+        where.append("channel_id = ?")
+        params.append(channel_id)
 
     sql = "SELECT * FROM calendar_events"
 
@@ -770,6 +832,7 @@ def create_calendar_event(payload: CalendarEventCreateRequest, request: Request)
         INSERT INTO calendar_events (
             id,
             room_name,
+            channel_id,
             scope,
             owner_user_id,
             title,
@@ -785,11 +848,12 @@ def create_calendar_event(payload: CalendarEventCreateRequest, request: Request)
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             event_id,
             room_name,
+            payload.channelId,
             scope,
             user_id if scope == "personal" else None,
             payload.title,

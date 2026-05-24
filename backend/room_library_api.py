@@ -2,6 +2,7 @@ import sqlite3
 import uuid
 from pathlib import Path
 from typing import Optional
+from fastapi import Request, UploadFile, File, Form
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -110,6 +111,7 @@ def normalize_library_item(row):
         "id": d.get("id"),
         "sessionId": d.get("session_id"),
         "roomName": d.get("room_name"),
+        "channelId": d.get("channel_id"),
         "scope": d.get("scope"),
         "bucket": d.get("bucket"),
         "bucketLabel": bucket_label(d.get("bucket")),
@@ -158,6 +160,7 @@ def ensure_library_tables():
         CREATE TABLE IF NOT EXISTS library_items (
             id TEXT PRIMARY KEY,
             session_id TEXT,
+            channel_id TEXT,
             scope TEXT NOT NULL,
             bucket TEXT NOT NULL,
             kind TEXT NOT NULL,
@@ -232,6 +235,7 @@ def save_library_item(
     conn,
     room_name: str,
     session_id: Optional[str],
+    channel_id: Optional[str],
     bucket: str,
     kind: str,
     name: str,
@@ -247,6 +251,7 @@ def save_library_item(
         INSERT INTO library_items (
             id,
             session_id,
+            channel_id,
             scope,
             bucket,
             kind,
@@ -258,11 +263,12 @@ def save_library_item(
             room_name,
             created_by
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)
         """,
         (
             item_id,
             session_id,
+            channel_id,
             "room" if not session_id else "session",
             bucket,
             kind,
@@ -282,6 +288,7 @@ def save_library_item(
 def get_room_library_tree(
     request: Request,
     room_name: str = Query("default_room"),
+    channel_id: Optional[str] = Query(None),
 ):
     ensure_library_tables()
 
@@ -306,8 +313,15 @@ def get_room_library_tree(
         conn.close()
         raise HTTPException(status_code=404, detail="방을 찾을 수 없습니다.")
 
+    where_clause_items = "COALESCE(li.room_name, ms.room_name, 'default_room') = ?"
+    params_items = [room_name]
+    
+    if channel_id:
+        where_clause_items += " AND COALESCE(li.channel_id, ms.channel_id) = ?"
+        params_items.append(channel_id)
+
     items = conn.execute(
-        """
+        f"""
         SELECT
             li.*,
             ms.title AS session_title,
@@ -316,14 +330,20 @@ def get_room_library_tree(
         FROM library_items li
         LEFT JOIN meeting_sessions ms
           ON ms.id = li.session_id
-        WHERE COALESCE(li.room_name, ms.room_name, 'default_room') = ?
+        WHERE {where_clause_items}
         ORDER BY li.created_at DESC
         """,
-        (room_name,),
+        tuple(params_items),
     ).fetchall()
 
+    where_clause_sessions = "ms.room_name = ?"
+    params_sessions = [room_name]
+    if channel_id:
+        where_clause_sessions += " AND ms.channel_id = ?"
+        params_sessions.append(channel_id)
+
     sessions = conn.execute(
-        """
+        f"""
         SELECT
             ms.*,
 
@@ -360,33 +380,40 @@ def get_room_library_tree(
         FROM meeting_sessions ms
         LEFT JOIN library_items li
           ON li.session_id = ms.id
-        WHERE ms.room_name = ?
+        WHERE {where_clause_sessions}
         GROUP BY ms.id
         ORDER BY ms.created_at DESC
         """,
-        (room_name,),
+        tuple(params_sessions),
     ).fetchall()
 
+    where_clause_reports = "COALESCE(ms.room_name, 'default_room') = ?"
+    params_reports = [room_name]
+    if channel_id:
+        where_clause_reports += " AND ms.channel_id = ?"
+        params_reports.append(channel_id)
+
     reports = conn.execute(
-        """
+        f"""
         SELECT
             rc.session_id,
-            rc.room_name,
-            rc.output_dir,
-            rc.final_summary_path,
-            rc.todo_json_path,
-            rc.todo_markdown_path,
-            rc.transcript_path,
+            COALESCE(ms.room_name, 'default_room') AS room_name,
+            NULL AS output_dir,
+            NULL AS final_summary_path,
+            NULL AS todo_json_path,
+            NULL AS todo_markdown_path,
+            NULL AS transcript_path,
+            rc.report_json AS report_json,
             rc.created_at,
             rc.updated_at,
-            ms.title AS session_title
+            COALESCE(ms.title, '제목 없음') AS session_title
         FROM meeting_report_cache rc
         LEFT JOIN meeting_sessions ms
-          ON ms.id = rc.session_id
-        WHERE COALESCE(rc.room_name, ms.room_name, 'default_room') = ?
+        ON ms.id = rc.session_id
+        WHERE {where_clause_reports}
         ORDER BY rc.updated_at DESC
         """,
-        (room_name,),
+        tuple(params_reports),
     ).fetchall()
 
     conn.close()
@@ -443,6 +470,7 @@ def get_room_library_tree(
 def list_room_sessions(
     request: Request,
     room_name: str,
+    channel_id: Optional[str] = Query(None),
 ):
     room_name = safe_room_name(room_name)
     user = get_current_user(request)
@@ -451,14 +479,20 @@ def list_room_sessions(
     conn = get_conn()
     require_room_member(conn, room_name, user_id)
 
+    where_clause = "room_name = ?"
+    params = [room_name]
+    if channel_id:
+        where_clause += " AND channel_id = ?"
+        params.append(channel_id)
+
     rows = conn.execute(
-        """
+        f"""
         SELECT *
         FROM meeting_sessions
-        WHERE room_name = ?
+        WHERE {where_clause}
         ORDER BY created_at DESC
         """,
-        (room_name,),
+        tuple(params),
     ).fetchall()
 
     conn.close()
@@ -470,10 +504,11 @@ def list_room_sessions(
 
 
 @router.post("/rooms/{room_name}/knowledge")
-async def upload_room_knowledge_file(
+async def upload_knowledge(
     room_name: str,
     request: Request,
     file: UploadFile = File(...),
+    channel_id: Optional[str] = Form(None),
 ):
     ensure_library_tables()
 
@@ -501,7 +536,9 @@ async def upload_room_knowledge_file(
         conn.close()
         raise HTTPException(status_code=400, detail="지원하지 않는 문서 형식입니다.")
 
-    upload_dir = DATA_DIR / "room_knowledge" / room_name
+    from storage_paths import sanitize_room_name
+    safe_channel = sanitize_room_name(channel_id) if channel_id else "default_channel"
+    upload_dir = DATA_DIR / "workspaces" / sanitize_room_name(room_name) / "channels" / safe_channel / "knowledge"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     safe_name = f"{uuid.uuid4()}_{Path(original_name).name}"
@@ -522,6 +559,7 @@ async def upload_room_knowledge_file(
         conn=conn,
         room_name=room_name,
         session_id=None,
+        channel_id=channel_id,
         bucket="uploaded_knowledge",
         kind=f"room_knowledge{ext}",
         name=original_name,

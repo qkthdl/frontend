@@ -28,7 +28,6 @@ import {
 } from '../services/realtimeMeetingService'
 import { chatWithAI } from '../services/aiService'
 import { logMeetingAIEvent, regenerateMeetingReport } from '../services/meetingReportService'
-import MicLevelMeter from './MicLevelMeter'
 
 const CHUNK_MS = 15000
 
@@ -695,14 +694,25 @@ export default function MeetingLiveView({
 
         <aside className="min-h-0 border-l border-gray-200 flex flex-col">
           <div className="h-16 px-5 flex items-center justify-between border-b border-gray-200 shrink-0">
-            <div className="font-black">마이크 입력 상태</div>
+            <div className="font-black">회의 중 녹음본 / STT</div>
             <button onClick={refreshMeeting} className="text-xs rounded-lg border px-2 py-1">
               <RefreshCw className="w-3 h-3 inline" /> 갱신
             </button>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
-            <MicLevelMeter active={Boolean(isRecording && !isPaused)} />
+            {liveTranscriptItems.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-center text-sm text-gray-400">
+                아직 STT가 없습니다.
+              </div>
+            ) : (
+              liveTranscriptItems.map((item) => (
+                <div key={item.id} className="rounded-2xl bg-gray-50 border border-gray-200 p-3">
+                  <div className="text-xs text-violet-600 font-bold">실시간 STT 기록</div>
+                  <div className="text-sm mt-1 whitespace-pre-wrap">{item.previewLine}</div>
+                </div>
+              ))
+            )}
             <div ref={transcriptEndRef} />
           </div>
         </aside>

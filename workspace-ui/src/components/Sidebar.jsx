@@ -62,7 +62,7 @@ export default function Sidebar({ activeView, setActiveView, activeWorkspace, ac
     if (!cName) return
 
     try {
-      const created = await createChannel(activeWorkspace, cName, "")
+      const created = await createChannel(activeWorkspace, cName, "", newRoomColor)
       await loadChannels()
 
       setActiveChannel(created.id, created.channelName)

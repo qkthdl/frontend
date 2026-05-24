@@ -1,65 +1,57 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
-async function parseJsonSafe(response) {
-  try {
-    return await response.json()
-  } catch {
-    return null
-  }
-}
-
-async function request(path, options = {}, fallback = '요청 실패') {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    credentials: 'include',
-    ...options,
-  })
-
-  const data = await parseJsonSafe(res)
-
-  if (!res.ok) {
-    throw new Error(data?.detail || data?.message || fallback)
-  }
-
-  return data
-}
 
 export async function fetchMe() {
-  try {
-    return await request('/auth/me', {}, '로그인 상태 확인 실패')
-  } catch {
-    return null
+  return {
+    authenticated: true,
+    user: {
+      id: 'dev-user',
+      name: 'Dev User',
+      email: 'dev@example.com',
+      picture: null,
+    },
   }
 }
 
-export async function getCurrentUser() {
-  return fetchMe()
+export function loginWithGoogle() {
+  console.log('UI 개발 중: Google login 비활성화')
 }
 
 export async function logout() {
-  return request(
-    '/auth/logout',
-    {
-      method: 'POST',
-    },
-    '로그아웃 실패',
-  )
+  return { ok: true }
 }
 
-export async function logoutUser() {
-  return logout()
-}
+//백엔드 막아두고 할때
+// const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 
-export function loginWithGoogle(event) {
-  if (event?.preventDefault) event.preventDefault()
-  if (event?.stopPropagation) event.stopPropagation()
+// async function parseResponse(res) {
+//   const data = await res.json().catch(() => null)
 
-  window.location.assign(`${API_BASE_URL}/auth/google/login`)
-}
+//   if (!res.ok) {
+//     const message = data?.detail || data?.message || '요청 처리 중 오류가 발생했습니다.'
+//     throw new Error(message)
+//   }
 
-export function startGoogleLogin(event) {
-  loginWithGoogle(event)
-}
+//   return data
+// }
 
-export function openGoogleLogin(event) {
-  loginWithGoogle(event)
-}
+// export async function fetchMe() {
+//   const res = await fetch(`${API_BASE}/auth/me`, {
+//     method: 'GET',
+//     credentials: 'include',
+//   })
+
+//   return parseResponse(res)
+// }
+
+// export function loginWithGoogle() {
+//   window.location.href = `${API_BASE}/auth/google/login`
+// }
+
+// export async function logout() {
+//   const res = await fetch(`${API_BASE}/auth/logout`, {
+//     method: 'POST',
+//     credentials: 'include',
+//   })
+
+//   return parseResponse(res)
+// }

@@ -1,3 +1,61 @@
+//백엔드 막아둠
+
+// export async function getRoomTodos(roomName, filters = {}) {
+//   return {
+//     todos: [
+//       {
+//         id: 'todo-1',
+//         title: 'UI 통합 마무리',
+//         description: 'KimTodoBoard를 회의록 옆 탭에 연결합니다.',
+//         status: 'open',
+//         priority: 'high',
+//         weekLabel: '1주차',
+//         sessionId: 'session-1',
+//         sessionTitle: '개발 회의',
+//         assigneeType: 'team',
+//         assigneeName: 'Dev User',
+//         recommendedDueDate: '2026-05-05',
+//         dueDate: '',
+//         calendarScope: 'team',
+//       },
+//     ],
+//     sessions: [
+//       { id: 'session-1', title: '개발 회의' },
+//     ],
+//     weekLabels: ['1주차', '2주차'],
+//   }
+// }
+
+// export async function getSessionTodos(sessionId) {
+//   return {
+//     todos: [],
+//   }
+// }
+
+// export async function updateTodo(todoId, payload) {
+//   return { ok: true, id: todoId, ...payload }
+// }
+
+// export async function deleteTodo(todoId) {
+//   return { ok: true, id: todoId }
+// }
+
+// export async function addTodoToCalendar(todoId, payload) {
+//   return { ok: true, id: todoId, ...payload }
+// }
+
+// export async function getCalendarEvents(filters = {}) {
+//   return { events: [] }
+// }
+
+// export async function createCalendarEvent(payload) {
+//   return { ok: true, id: `event-${Date.now()}`, ...payload }
+// }
+
+// export async function deleteCalendarEvent(eventId) {
+//   return { ok: true, id: eventId }
+// }
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
 async function parseJsonSafe(response) {
@@ -28,6 +86,7 @@ export async function getRoomTodos(roomName, filters = {}) {
   query.set('status', filters.status || 'all')
   query.set('week_label', filters.weekLabel || 'all')
   query.set('session_id', filters.sessionId || 'all')
+  if (filters.channelId) query.set('channel_id', filters.channelId)
 
   return request(
     `${API_BASE_URL}/todo-calendar/todo/room/${encodeURIComponent(roomName)}?${query.toString()}`,
@@ -55,6 +114,20 @@ export async function updateTodo(todoId, payload) {
       body: JSON.stringify(payload),
     },
     'To-Do 수정 실패',
+  )
+}
+
+export async function createTodo(payload) {
+  return request(
+    `${API_BASE_URL}/todo-calendar/todo`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+    'To-Do 생성 실패',
   )
 }
 
@@ -86,6 +159,7 @@ export async function getCalendarEvents(filters = {}) {
   const query = new URLSearchParams()
 
   if (filters.roomName) query.set('room_name', filters.roomName)
+  if (filters.channelId) query.set('channel_id', filters.channelId)
   query.set('scope', filters.scope || 'personal')
   query.set('week_label', filters.weekLabel || 'all')
 

@@ -4,18 +4,33 @@ import { createMeetingSession } from '../services/realtimeMeetingService'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
-export default function MeetingRoomPrep({ roomName, channelId, onStartMeeting }) {
-  const [meetingTitle, setMeetingTitle] = useState('')
+export default function MeetingRoomPrep({ roomName, channelId, initialEvent, onStartMeeting }) {
+  const [meetingTitle, setMeetingTitle] = useState(initialEvent?.title || '')
   const [meetingType, setMeetingType] = useState('general')
   const [meetingTime, setMeetingTime] = useState('')
   const [keywords, setKeywords] = useState('')
   const [planText, setPlanText] = useState('')
   const [planFile, setPlanFile] = useState(null)
-  const [realtimeModelName, setRealtimeModelName] = useState('base')
-  const [finalModelName, setFinalModelName] = useState('medium')
-  const [noiseFilterEnabled, setNoiseFilterEnabled] = useState(true)
   const [isStarting, setIsStarting] = useState(false)
   const [errorText, setErrorText] = useState('')
+
+  React.useEffect(() => {
+    if (initialEvent) {
+      setMeetingTitle(initialEvent.title || '')
+      if (initialEvent.startTime || initialEvent.date) {
+        const dateObj = initialEvent.startTime ? new Date(initialEvent.startTime) : new Date(initialEvent.date)
+        const dateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`
+        let timeStr = '00:00'
+        if (initialEvent.startTime) {
+          timeStr = `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`
+        }
+        setMeetingTime(`${dateStr} ${timeStr}`)
+      }
+    } else {
+      setMeetingTitle('')
+      setMeetingTime('')
+    }
+  }, [initialEvent])
 
   const extractDocumentText = async (file) => {
     if (!file) return ''
@@ -70,12 +85,6 @@ export default function MeetingRoomPrep({ roomName, channelId, onStartMeeting })
         planText: finalPlanText,
         realtime_recording_enabled: true,
         realtimeRecordingEnabled: true,
-        realtime_model_name: realtimeModelName,
-        realtimeModelName,
-        final_model_name: finalModelName,
-        finalModelName,
-        noise_filter_enabled: noiseFilterEnabled,
-        noiseFilterEnabled,
         channel_id: channelId,
         channelId,
       }
@@ -172,61 +181,7 @@ export default function MeetingRoomPrep({ roomName, channelId, onStartMeeting })
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    실시간 STT Whisper 모델
-                  </label>
-                  <select
-                    value={realtimeModelName}
-                    onChange={(e) => setRealtimeModelName(e.target.value)}
-                    className="w-full h-12 rounded-2xl border border-gray-200 px-4 outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    <option value="tiny">tiny - 빠름 / 정확도 낮음</option>
-                    <option value="base">base - 기본 추천</option>
-                    <option value="small">small - 정확도 우선</option>
-                  </select>
-                  <p className="mt-2 text-xs text-gray-400">
-                    회의 중 chunk STT에 사용됩니다.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    회의 후 분석 Whisper 모델
-                  </label>
-                  <select
-                    value={finalModelName}
-                    onChange={(e) => setFinalModelName(e.target.value)}
-                    className="w-full h-12 rounded-2xl border border-gray-200 px-4 outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    <option value="base">base - 빠름</option>
-                    <option value="small">small - 균형</option>
-                    <option value="medium">medium - 기본 추천</option>
-                    <option value="large-v3-turbo">large-v3-turbo - 빠른 고정확도</option>
-                    <option value="large-v3">large-v3 - 정확도 우선</option>
-                  </select>
-                  <p className="mt-2 text-xs text-gray-400">
-                    회의 종료 후 전체 STT/분석에 사용됩니다.
-                  </p>
-                </div>
-              </div>
-
-              <label className="mt-4 flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={noiseFilterEnabled}
-                  onChange={(e) => setNoiseFilterEnabled(e.target.checked)}
-                  className="w-4 h-4"
-                />
-                실시간 STT 전 노이즈 필터 적용
-                <span className="text-xs text-gray-400 font-normal">
-                  highpass / lowpass / denoise / volume normalize
-                </span>
-              </label>
-
-키워드</label>
+              <label className="block text-sm font-bold text-gray-700 mb-2">키워드</label>
               <input
                 value={keywords}
                 onChange={(e) => setKeywords(e.target.value)}

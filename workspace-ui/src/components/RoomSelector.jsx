@@ -47,7 +47,7 @@ export default function RoomSelector({ onBackHome, onSelectRoom }) {
       setMessage('')
 
       const data = await fetchRooms()
-      const nextRooms = (data?.rooms || data?.items || data?.data || (Array.isArray(data) ? data : [])) || []
+      const nextRooms = data.rooms || []
 
       setRooms(nextRooms)
 
@@ -304,7 +304,7 @@ export default function RoomSelector({ onBackHome, onSelectRoom }) {
 
             <div className="mt-6 flex items-center justify-between">
               <h2 className="text-lg font-black">참여 중인 룸</h2>
-              <span className="text-xs text-slate-400">{(rooms || []).length}개</span>
+              <span className="text-xs text-slate-400">{rooms.length}개</span>
             </div>
 
             <div className="mt-3 space-y-2">
@@ -314,13 +314,13 @@ export default function RoomSelector({ onBackHome, onSelectRoom }) {
                 </div>
               )}
 
-              {!loading && (rooms || []).length === 0 && (
+              {!loading && rooms.length === 0 && (
                 <div className="rounded-2xl bg-slate-950 border border-slate-800 p-4 text-slate-400">
                   아직 참여 중인 룸이 없습니다.
                 </div>
               )}
 
-              {(rooms || []).map((room) => {
+              {rooms.map((room) => {
                 const roomName = getRoomName(room)
                 const active = getRoomName(selectedRoom) === roomName
                 const isDeleting = deletingRoomName === roomName

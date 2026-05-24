@@ -30,6 +30,7 @@ def ensure_chat_tables():
         CREATE TABLE IF NOT EXISTS chat_messages (
             id TEXT PRIMARY KEY,
             room_name TEXT NOT NULL,
+            channel_id TEXT,
             sender_user_id TEXT NOT NULL,
             target_type TEXT NOT NULL DEFAULT 'room',
             peer_user_id TEXT,
@@ -78,6 +79,7 @@ def assert_peer_member(c: sqlite3.Connection, room_name: str, peer_user_id: str)
 class ChatSendPayload(BaseModel):
     content: str
     targetType: str = "room"  # room 또는 dm
+    channelId: Optional[str] = None
     peerUserId: Optional[str] = None
 
 
@@ -91,6 +93,7 @@ def row_to_message(row):
     return {
         "id": row["id"],
         "roomName": row["room_name"],
+        "channelId": row["channel_id"],
         "senderUserId": row["sender_user_id"],
         "senderName": row["sender_name"],
         "senderEmail": row["sender_email"],
@@ -107,6 +110,7 @@ def list_messages(
     room_name: str,
     request: Request,
     targetType: str = "room",
+    channelId: Optional[str] = None,
     peerUserId: Optional[str] = None,
     limit: int = 100,
 ):
@@ -122,17 +126,25 @@ def list_messages(
     limit = max(1, min(limit, 300))
 
     if targetType == "room":
+        where_clause = "m.room_name = ? AND m.target_type = 'room'"
+        params = [safe_room_name]
+        
+        if channelId:
+            where_clause += " AND m.channel_id = ?"
+            params.append(channelId)
+            
+        params.append(limit)
+        
         rows = c.execute(
-            """
+            f"""
             SELECT m.*, u.name AS sender_name, u.email AS sender_email, u.picture AS sender_picture
             FROM chat_messages m
             LEFT JOIN users u ON m.sender_user_id = u.id
-            WHERE m.room_name = ?
-              AND m.target_type = 'room'
+            WHERE {where_clause}
             ORDER BY m.created_at ASC
             LIMIT ?
             """,
-            (safe_room_name, limit),
+            tuple(params),
         ).fetchall()
 
     elif targetType == "dm":
@@ -205,13 +217,14 @@ def send_message(room_name: str, payload: ChatSendPayload, request: Request):
     c.execute(
         """
         INSERT INTO chat_messages (
-            id, room_name, sender_user_id, target_type, peer_user_id, content, created_at
+            id, room_name, channel_id, sender_user_id, target_type, peer_user_id, content, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             message_id,
             safe_room_name,
+            payload.channelId,
             user_id,
             target_type,
             payload.peerUserId if target_type == "dm" else None,

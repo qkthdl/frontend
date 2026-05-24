@@ -2,6 +2,7 @@ import os
 import sqlite3
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -25,6 +26,27 @@ def ensure_room_tables():
     c = conn()
     cur = c.cursor()
 
+##------------------추가-------------------##
+
+    cur.execute(
+    """
+    CREATE TABLE IF NOT EXISTS calendar_events (
+        id TEXT PRIMARY KEY,
+        room_name TEXT NOT NULL,
+        channel_id TEXT,
+        title TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT,
+        description TEXT,
+        is_private INTEGER DEFAULT 0,
+        color TEXT,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """
+)
+##------------------추가-------------------##
+
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS rooms (
@@ -32,6 +54,20 @@ def ensure_room_tables():
             room_name TEXT UNIQUE NOT NULL,
             owner_user_id TEXT NOT NULL,
             created_at TEXT NOT NULL
+        )
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS channels (
+            id TEXT PRIMARY KEY,
+            room_name TEXT NOT NULL,
+            channel_name TEXT NOT NULL,
+            description TEXT,
+            color TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE(room_name, channel_name)
         )
         """
     )
@@ -67,6 +103,7 @@ def ensure_room_tables():
         CREATE TABLE IF NOT EXISTS meeting_sessions (
             id TEXT PRIMARY KEY,
             room_name TEXT DEFAULT 'default_room',
+            channel_id TEXT,
             title TEXT NOT NULL,
             meeting_time TEXT,
             keywords TEXT,
@@ -86,6 +123,11 @@ def ensure_room_tables():
             "ALTER TABLE meeting_sessions ADD COLUMN room_name TEXT DEFAULT 'default_room'"
         )
 
+    cur.execute("PRAGMA table_info(channels)")
+    channel_cols = {row[1] for row in cur.fetchall()}
+    if "color" not in channel_cols:
+        cur.execute("ALTER TABLE channels ADD COLUMN color TEXT")
+
     c.commit()
     c.close()
 
@@ -93,9 +135,25 @@ def ensure_room_tables():
 class RoomCreatePayload(BaseModel):
     roomName: str
 
+##------------------추가-------------------##
+
+class CalendarEventPayload(BaseModel):
+    title: str
+    startTime: str
+    endTime: str | None = None
+    description: str | None = ""
+    isPrivate: bool = False
+    color: str | None = None
+
+##------------------추가-------------------##
 
 class InviteAcceptPayload(BaseModel):
     inviteCode: str
+
+class ChannelCreatePayload(BaseModel):
+    channelName: str
+    description: str | None = ""
+    color: str | None = None
 
 
 def get_frontend_url():
@@ -216,8 +274,98 @@ def create_room(payload: RoomCreatePayload, request: Request):
     }
 
 
+@router.get("/{room_name}/channels")
+def list_room_channels(room_name: str, request: Request):
+    ensure_room_tables()
+
+    user = get_login_user(request)
+    user_id = user["id"]
+    safe_room_name = sanitize_room_name(room_name)
+
+    c = conn()
+    assert_room_member(c, safe_room_name, user_id)
+
+    rows = c.execute(
+        """
+        SELECT *
+        FROM channels
+        WHERE room_name = ?
+        ORDER BY created_at ASC
+        """,
+        (safe_room_name,),
+    ).fetchall()
+    c.close()
+
+    return {
+        "roomName": safe_room_name,
+        "channels": [
+            {
+                "id": row["id"],
+                "roomName": row["room_name"],
+                "channelName": row["channel_name"],
+                "description": row["description"],
+                "color": row["color"],
+                "createdAt": row["created_at"],
+            }
+            for row in rows
+        ],
+    }
+
+
+@router.post("/{room_name}/channels")
+def create_room_channel(room_name: str, payload: ChannelCreatePayload, request: Request):
+    ensure_room_tables()
+
+    user = get_login_user(request)
+    user_id = user["id"]
+    safe_room_name = sanitize_room_name(room_name)
+
+    c = conn()
+    assert_room_member(c, safe_room_name, user_id)
+
+    channel_name = payload.channelName.strip()
+    if not channel_name:
+        c.close()
+        raise HTTPException(status_code=400, detail="채널 이름이 비어 있습니다.")
+
+    exists = c.execute(
+        """
+        SELECT id
+        FROM channels
+        WHERE room_name = ? AND channel_name = ?
+        """,
+        (safe_room_name, channel_name),
+    ).fetchone()
+
+    if exists:
+        c.close()
+        raise HTTPException(status_code=409, detail="이미 존재하는 채널 이름입니다.")
+
+    channel_id = str(uuid.uuid4())
+    now = datetime.now().isoformat()
+
+    c.execute(
+        """
+        INSERT INTO channels (id, room_name, channel_name, description, color, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (channel_id, safe_room_name, channel_name, payload.description, payload.color, now),
+    )
+
+    c.commit()
+    c.close()
+
+    return {
+        "id": channel_id,
+        "roomName": safe_room_name,
+        "channelName": channel_name,
+        "description": payload.description,
+        "color": payload.color,
+        "createdAt": now,
+    }
+
 @router.get("/{room_name}/sessions")
-def list_room_sessions(room_name: str, request: Request):
+def list_room_sessions(room_name: str, request: Request, channel_id: Optional[str] = None):
     ensure_room_tables()
 
     user = get_login_user(request)
@@ -229,15 +377,26 @@ def list_room_sessions(room_name: str, request: Request):
 
     assert_room_member(c, safe_room_name, user_id)
 
-    rows = c.execute(
-        """
-        SELECT *
-        FROM meeting_sessions
-        WHERE room_name = ?
-        ORDER BY created_at DESC
-        """,
-        (safe_room_name,),
-    ).fetchall()
+    if channel_id:
+        rows = c.execute(
+            """
+            SELECT *
+            FROM meeting_sessions
+            WHERE room_name = ? AND channel_id = ?
+            ORDER BY created_at DESC
+            """,
+            (safe_room_name, channel_id),
+        ).fetchall()
+    else:
+        rows = c.execute(
+            """
+            SELECT *
+            FROM meeting_sessions
+            WHERE room_name = ?
+            ORDER BY created_at DESC
+            """,
+            (safe_room_name,),
+        ).fetchall()
 
     c.close()
 
@@ -248,6 +407,7 @@ def list_room_sessions(room_name: str, request: Request):
                 "id": row["id"],
                 "sessionId": row["id"],
                 "roomName": row["room_name"],
+                "channelId": row["channel_id"],
                 "title": row["title"],
                 "meetingType": row["meeting_type"],
                 "meetingTime": row["meeting_time"],
@@ -277,7 +437,7 @@ def list_room_members(room_name: str, request: Request):
     rows = c.execute(
         """
         SELECT m.room_name, m.user_id, m.role, m.created_at,
-               u.email, u.name, u.picture
+        u.email, u.name, u.picture
         FROM room_members m
         LEFT JOIN users u ON m.user_id = u.id
         WHERE m.room_name = ?
@@ -462,3 +622,153 @@ def accept_invite(payload: InviteAcceptPayload, request: Request):
         "userId": user_id,
         "role": "member",
     }
+
+
+@router.get("/{room_name}/calendar/events")
+def list_calendar_events(room_name: str, request: Request, channel_id: Optional[str] = None):
+    ensure_room_tables()
+
+    user = get_login_user(request)
+    user_id = user["id"]
+
+    safe_room_name = sanitize_room_name(room_name)
+
+    c = conn()
+
+    assert_room_member(c, safe_room_name, user_id)
+
+    if channel_id:
+        rows = c.execute(
+            """
+            SELECT *
+            FROM calendar_events
+            WHERE room_name = ? AND channel_id = ?
+            ORDER BY start_time ASC
+            """,
+            (safe_room_name, channel_id),
+        ).fetchall()
+    else:
+        rows = c.execute(
+            """
+            SELECT *
+            FROM calendar_events
+            WHERE room_name = ?
+            ORDER BY start_time ASC
+            """,
+            (safe_room_name,),
+        ).fetchall()
+
+    c.close()
+
+    return {
+        "roomName": safe_room_name,
+        "events": [
+            {
+                "id": row["id"],
+                "roomName": row["room_name"],
+                "channelId": row["channel_id"],
+                "title": row["title"],
+                "startTime": row["start_time"],
+                "endTime": row["end_time"],
+                "description": row["description"],
+                "isPrivate": bool(row["is_private"]),
+                "color": row["color"],
+                "createdBy": row["created_by"],
+                "createdAt": row["created_at"],
+            }
+            for row in rows
+        ],
+    }
+
+##---------------------------추가---------------------------------##
+
+@router.post("/{room_name}/calendar/events")
+def create_calendar_event(
+    room_name: str,
+    payload: CalendarEventPayload,
+    request: Request,
+    channel_id: Optional[str] = None
+):
+    ensure_room_tables()
+
+    user = get_login_user(request)
+    user_id = user["id"]
+
+    safe_room_name = sanitize_room_name(room_name)
+
+    if not payload.title.strip():
+        raise HTTPException(status_code=400, detail="일정 제목이 필요합니다.")
+
+    now = datetime.now().isoformat()
+    event_id = str(uuid.uuid4())
+
+    c = conn()
+
+    assert_room_member(c, safe_room_name, user_id)
+
+    color = payload.color or "#3b82f6"
+
+    c.execute(
+        """
+        INSERT INTO calendar_events (
+            id, room_name, channel_id, title, start_time, end_time,
+            description, is_private, color, created_by, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            event_id,
+            safe_room_name,
+            channel_id,
+            payload.title.strip(),
+            payload.startTime,
+            payload.endTime,
+            payload.description or "",
+            1 if payload.isPrivate else 0,
+            color,
+            user_id,
+            now,
+        ),
+    )
+
+    c.commit()
+    c.close()
+
+    return {
+        "id": event_id,
+        "roomName": safe_room_name,
+        "channelId": channel_id,
+        "title": payload.title.strip(),
+        "startTime": payload.startTime,
+        "endTime": payload.endTime,
+        "description": payload.description or "",
+        "isPrivate": payload.isPrivate,
+        "color": color,
+        "createdBy": user_id,
+        "createdAt": now,
+    }
+
+@router.delete("/{room_name}/calendar/events/{event_id}")
+def delete_calendar_event(room_name: str, event_id: str, request: Request):
+    ensure_room_tables()
+
+    user = get_login_user(request)
+    user_id = user["id"]
+
+    safe_room_name = sanitize_room_name(room_name)
+
+    c = conn()
+    assert_room_member(c, safe_room_name, user_id)
+
+    c.execute(
+        """
+        DELETE FROM calendar_events
+        WHERE id = ? AND room_name = ?
+        """,
+        (event_id, safe_room_name),
+    )
+
+    c.commit()
+    c.close()
+
+    return {"ok": True, "eventId": event_id}

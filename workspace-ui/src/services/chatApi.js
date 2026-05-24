@@ -33,20 +33,11 @@ function normalizeRoomName(roomName, room_name) {
   return resolved
 }
 
-function normalizeTargetType(value) {
-  const v = String(value || 'room').toLowerCase()
-
-  if (v === 'team' || v === 'channel' || v === 'room') return 'room'
-  if (v === 'dm' || v === 'direct' || v === 'personal') return 'dm'
-
-  return 'room'
-}
-
 function normalizeFetchArgs(arg1, arg2, arg3) {
   if (typeof arg1 === 'object' && arg1 !== null) {
     return {
       roomName: arg1.roomName || arg1.room_name,
-      targetType: normalizeTargetType(arg1.targetType || arg1.chatType || arg1.chat_type || arg2),
+      chatType: arg1.chatType || arg1.chat_type || arg2 || 'team',
       peerUserId: arg1.peerUserId || arg1.peer_user_id || arg1.dmUserId || arg1.dm_user_id || arg3 || null,
       limit: arg1.limit || 100,
     }
@@ -54,7 +45,7 @@ function normalizeFetchArgs(arg1, arg2, arg3) {
 
   return {
     roomName: arg1,
-    targetType: normalizeTargetType(arg2),
+    chatType: arg2 || 'team',
     peerUserId: arg3 || null,
     limit: 100,
   }
@@ -64,16 +55,16 @@ function normalizeSendArgs(arg1, arg2, arg3, arg4) {
   if (typeof arg1 === 'object' && arg1 !== null) {
     return {
       roomName: arg1.roomName || arg1.room_name,
-      content: arg1.content || arg1.message || arg1.text || '',
-      targetType: normalizeTargetType(arg1.targetType || arg1.chatType || arg1.chat_type || arg3),
+      message: arg1.message || arg1.text || '',
+      chatType: arg1.chatType || arg1.chat_type || arg3 || 'team',
       peerUserId: arg1.peerUserId || arg1.peer_user_id || arg1.dmUserId || arg1.dm_user_id || arg4 || null,
     }
   }
 
   return {
     roomName: arg1,
-    content: arg2 || '',
-    targetType: normalizeTargetType(arg3),
+    message: arg2 || '',
+    chatType: arg3 || 'team',
     peerUserId: arg4 || null,
   }
 }
@@ -83,7 +74,7 @@ function normalizeAskArgs(arg1, arg2, arg3, arg4, arg5) {
     return {
       roomName: arg1.roomName || arg1.room_name,
       question: arg1.question || arg1.message || arg1.text || '',
-      targetType: normalizeTargetType(arg1.targetType || arg1.chatType || arg1.chat_type || arg3),
+      chatType: arg1.chatType || arg1.chat_type || arg3 || 'team',
       peerUserId: arg1.peerUserId || arg1.peer_user_id || arg1.dmUserId || arg1.dm_user_id || arg4 || null,
       useWeb: Boolean(arg1.useWeb),
     }
@@ -92,23 +83,29 @@ function normalizeAskArgs(arg1, arg2, arg3, arg4, arg5) {
   return {
     roomName: arg1,
     question: arg2 || '',
-    targetType: normalizeTargetType(arg3),
+    chatType: arg3 || 'team',
     peerUserId: arg4 || null,
     useWeb: Boolean(arg5),
   }
 }
 
+/**
+ * Supports both:
+ * fetchChatMessages({ roomName, chatType, peerUserId, limit })
+ * fetchChatMessages(roomName, chatType, peerUserId)
+ *
+ * Backend:
+ * GET /chat/rooms/{room_name}/messages
+ */
 export async function fetchChatMessages(arg1, arg2, arg3) {
   const args = normalizeFetchArgs(arg1, arg2, arg3)
   const resolvedRoomName = normalizeRoomName(args.roomName)
 
   const query = new URLSearchParams()
   query.set('limit', String(args.limit || 100))
-  query.set('targetType', args.targetType || 'room')
 
-  if (args.peerUserId) {
-    query.set('peerUserId', args.peerUserId)
-  }
+  if (args.chatType) query.set('chat_type', args.chatType)
+  if (args.peerUserId) query.set('peer_user_id', args.peerUserId)
 
   const data = await request(
     `${API_BASE_URL}/chat/rooms/${encodeURIComponent(resolvedRoomName)}/messages?${query.toString()}`,
@@ -121,17 +118,25 @@ export async function fetchChatMessages(arg1, arg2, arg3) {
   }
 
   return {
-    ...(data || {}),
-    messages: data?.messages || data?.items || data?.data || [],
+    ...data,
+    messages: data?.messages || data?.items || [],
   }
 }
 
+/**
+ * Supports both:
+ * sendChatMessage({ roomName, message, chatType, peerUserId })
+ * sendChatMessage(roomName, message, chatType, peerUserId)
+ *
+ * Backend:
+ * POST /chat/rooms/{room_name}/messages
+ */
 export async function sendChatMessage(arg1, arg2, arg3, arg4) {
   const args = normalizeSendArgs(arg1, arg2, arg3, arg4)
   const resolvedRoomName = normalizeRoomName(args.roomName)
-  const content = String(args.content || '').trim()
+  const content = args.message || ''
 
-  if (!content) {
+  if (!content.trim()) {
     throw new Error('보낼 메시지를 입력하세요.')
   }
 
@@ -143,25 +148,38 @@ export async function sendChatMessage(arg1, arg2, arg3, arg4) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        content,
-        targetType: args.targetType || 'room',
+        message: content,
+        text: content,
+        chatType: args.chatType || 'team',
+        chat_type: args.chatType || 'team',
         peerUserId: args.peerUserId || null,
+        peer_user_id: args.peerUserId || null,
+        dmUserId: args.peerUserId || null,
+        dm_user_id: args.peerUserId || null,
       }),
     },
     '채팅 메시지 전송 실패',
   )
 }
 
+/**
+ * Supports both:
+ * askChatSlm({ roomName, question, chatType, peerUserId, useWeb })
+ * askChatSlm(roomName, question, chatType, peerUserId, useWeb)
+ *
+ * Backend:
+ * POST /chat/rooms/{room_name}/ask
+ */
 export async function askChatSlm(arg1, arg2, arg3, arg4, arg5) {
   const args = normalizeAskArgs(arg1, arg2, arg3, arg4, arg5)
   const resolvedRoomName = normalizeRoomName(args.roomName)
-  const question = String(args.question || '').trim()
+  const question = args.question || ''
 
-  if (!question) {
+  if (!question.trim()) {
     throw new Error('질문을 입력하세요.')
   }
 
-  return request(
+  const data = await request(
     `${API_BASE_URL}/chat/rooms/${encodeURIComponent(resolvedRoomName)}/ask`,
     {
       method: 'POST',
@@ -170,15 +188,32 @@ export async function askChatSlm(arg1, arg2, arg3, arg4, arg5) {
       },
       body: JSON.stringify({
         question,
-        targetType: args.targetType || 'room',
+        message: question,
+        text: question,
+        useWeb: args.useWeb || false,
+        chatType: args.chatType || 'team',
+        chat_type: args.chatType || 'team',
         peerUserId: args.peerUserId || null,
-        useWeb: Boolean(args.useWeb),
+        peer_user_id: args.peerUserId || null,
+        dmUserId: args.peerUserId || null,
+        dm_user_id: args.peerUserId || null,
+        meta: {
+          useWeb: args.useWeb || false,
+          roomName: resolvedRoomName,
+        },
       }),
     },
     '채팅 SLM 응답 실패',
   )
+
+  return data
 }
 
+/**
+ * FloatingMiniAssistant.jsx용
+ * Backend:
+ * POST /ai/chat
+ */
 export async function askMiniAssistant({
   message,
   roomName,
@@ -188,7 +223,7 @@ export async function askMiniAssistant({
   mode = 'general',
   activeView = '',
 }) {
-  const text = String(message || '').trim()
+  const text = (message || '').trim()
 
   if (!text) {
     throw new Error('질문을 입력하세요.')
@@ -228,9 +263,12 @@ export async function askMiniAssistant({
   )
 
   return {
-    answer: data?.answer || data?.message || data?.text || data?.content || '응답이 비어 있습니다.',
+    answer:
+      data?.answer ||
+      data?.message ||
+      data?.text ||
+      data?.content ||
+      '응답이 비어 있습니다.',
     raw: data,
   }
 }
-
-export { API_BASE_URL }

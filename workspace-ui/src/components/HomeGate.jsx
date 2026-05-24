@@ -50,7 +50,7 @@ export default function HomeGate({ onOpenRooms, onOpenCalendar }) {
           </h1>
 
           <p className="mt-5 text-blue-50 leading-7 text-lg">
-            룸 기반으로 팀원을 초대하고, 회의 STT·분석·To-Do·캘린더를 한 곳에서 관리합니다.
+            룸 기반으로 팀원을 초대하고, 회의 STT·분석·마인드맵·캘린더를 한 곳에서 관리합니다.
           </p>
 
           <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
@@ -106,7 +106,7 @@ export default function HomeGate({ onOpenRooms, onOpenCalendar }) {
                 </div>
               </div>
 
-              <button type="button"
+              <button
                 onClick={loginWithGoogle}
                 className="mt-5 w-full h-13 rounded-2xl bg-blue-600 text-white font-black flex items-center justify-center gap-2 hover:bg-blue-700"
               >

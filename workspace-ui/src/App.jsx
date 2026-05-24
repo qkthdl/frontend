@@ -22,6 +22,8 @@ import FloatingMiniAssistant from './components/KimFloatingMiniAssistant'
 {/* 신우 STT */}
 import KimSTTWorkspace from './components/KimSTTWorkspace'
 
+import EventSelectModal from './components/EventSelectModal'
+
 
 export default function App() {
   const [entryView, setEntryView] = useState('home')   //룸 선택 메인 접속 화면
@@ -35,6 +37,9 @@ export default function App() {
   const [reportSessionId, setReportSessionId] = useState(null)
   const [useWebSearch, setUseWebSearch] = useState(false)
   const [favoriteRooms, setFavoriteRooms] = useState([])
+  
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false)
+  const [selectedCalendarEvent, setSelectedCalendarEvent] = useState(null)
 
 
   const currentSessionId = useMemo(() => {
@@ -193,6 +198,11 @@ const goRooms = () => {
               setActiveView={setActiveView}
               favoriteRooms={favoriteRooms}
               toggleFavorite={toggleFavorite}
+              onOpenEventModal={() => setIsEventModalOpen(true)}
+              onStartNewMeeting={() => {
+                setSelectedCalendarEvent(null)
+                setActiveView('prep')
+              }}
             />
 
             <div className="flex-1 overflow-hidden">
@@ -202,6 +212,7 @@ const goRooms = () => {
                   <MeetingRoomPrep
                     roomName={selectedRoomName}
                     channelId={selectedChannelId}
+                    initialEvent={selectedCalendarEvent}
                     onStartMeeting={(data) => {
                       const mergedData = {
                         ...data,
@@ -297,13 +308,27 @@ const goRooms = () => {
           enabled={true}
         />
 
+        {isEventModalOpen && (
+          <EventSelectModal
+            roomName={selectedRoomName}
+            channelId={selectedChannelId}
+            onClose={() => setIsEventModalOpen(false)}
+            onSelect={(ev) => {
+              setSelectedCalendarEvent(ev)
+              setIsEventModalOpen(false)
+              setActiveView('prep')
+            }}
+          />
+        )}
+
     </div>
   )
   
 }
 
 
-function ChannelHeader({ selectedRoomName, selectedChannelName, selectedChannelId, activeView, setActiveView, favoriteRooms, toggleFavorite }) {
+function ChannelHeader({ selectedRoomName, selectedChannelName, selectedChannelId, activeView, setActiveView, favoriteRooms, toggleFavorite, onOpenEventModal, onStartNewMeeting }) {
+  const [showStartMenu, setShowStartMenu] = useState(false);
   const tabs = [
     { key: 'channel', label: '홈' },
     { key: 'channel-calendar', label: '캘린더' },
@@ -326,15 +351,33 @@ function ChannelHeader({ selectedRoomName, selectedChannelName, selectedChannelI
             className={`w-5 h-5 cursor-pointer transition-colors ${isFavorite ? 'text-yellow-400 fill-yellow-400' : 'text-gray-400 hover:text-yellow-400'}`}
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 relative">
           <button 
-            onClick={() => setActiveView('prep')}
+            onClick={() => setShowStartMenu(!showStartMenu)}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-sm shadow-sm transition-colors"
           >
             <Video className="w-4 h-4" />
             회의 시작
             <ChevronDown className="w-4 h-4 ml-1 opacity-80" />
           </button>
+          
+          {showStartMenu && (
+            <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50">
+              <button 
+                onClick={() => { setShowStartMenu(false); onStartNewMeeting(); }}
+                className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-gray-800 font-bold border-b border-gray-50 transition-colors"
+              >
+                새 회의 준비
+              </button>
+              <button 
+                onClick={() => { setShowStartMenu(false); onOpenEventModal(); }}
+                className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-indigo-600 font-bold transition-colors"
+              >
+                캘린더에서 일정 선택
+              </button>
+            </div>
+          )}
+
           <button className="p-2.5 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-50">
             <MoreHorizontal className="w-5 h-5" />
           </button>

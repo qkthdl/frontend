@@ -1,261 +1,283 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
+//백엔드 막아둠
+// 백엔드 임시 차단용 mock roomApi.js
 
-async function parseJsonSafe(response) {
-  try {
-    return await response.json()
-  } catch {
-    return null
-  }
-}
+// export const API_BASE = ''
 
-async function request(path, options = {}, fallback = '요청 실패') {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    credentials: 'include',
-    ...options,
-  })
+// export async function fetchRooms() {
+//   return {
+//     rooms: [
+//       {
+//         id: 'room-1',
+//         roomName: '개발 회의',
+//         name: '개발 회의',
+//         color: '#3b82f6',
+//         role: 'owner',
+//         createdAt: '2026-01-01',
+//       },
+//       {
+//         id: 'room-2',
+//         roomName: '캡스톤 회의',
+//         name: '캡스톤 회의',
+//         color: '#10b981',
+//         role: 'member',
+//         createdAt: '2026-01-02',
+//       },
+//     ],
+//   }
+// }
 
-  const data = await parseJsonSafe(res)
+// export async function createRoom(roomName, color = '#7c3aed', visibility = 'public') {
+//   return {
+//     id: `room-${Date.now()}`,
+//     roomName,
+//     name: roomName,
+//     color,
+//     visibility,
+//     role: 'owner',
+//     createdAt: new Date().toISOString(),
+//   }
+// }
+
+// export async function fetchRoomSessions(roomName) {
+//   return {
+//     sessions: [],
+//   }
+// }
+
+// export async function fetchAllCalendarEvents() {
+//   return {
+//     events: [
+//       {
+//         id: 'event-all-1',
+//         title: '전체 일정 예시',
+//         date: '2026-05-04',
+//         startTime: '2026-05-04T14:00:00',
+//         endTime: '2026-05-04T15:00:00',
+//         roomName: '개발 회의',
+//         channel: '개발 회의',
+//         isPrivate: false,
+//         color: '#3b82f6',
+//       },
+//     ],
+//   }
+// }
+
+// export async function fetchCalendarEvents(roomName) {
+//   return {
+//     events: [
+//       {
+//         id: `event-${roomName}-1`,
+//         title: `${roomName} 일정 예시`,
+//         date: '2026-05-04',
+//         startTime: '2026-05-04T14:00:00',
+//         endTime: '2026-05-04T15:00:00',
+//         roomName,
+//         channel: roomName,
+//         isPrivate: false,
+//         color: '#3b82f6',
+//       },
+//     ],
+//   }
+// }
+
+// export async function fetchRoomCalendar(roomName) {
+//   return fetchCalendarEvents(roomName)
+// }
+
+// export async function createRoomCalendarEvent(roomName, event) {
+//   return {
+//     id: `event-${Date.now()}`,
+//     roomName,
+//     channel: roomName,
+//     title: event.title,
+//     date: event.startTime ? event.startTime.split('T')[0] : event.date,
+//     startTime: event.startTime,
+//     endTime: event.endTime,
+//     description: event.description || '',
+//     isPrivate: event.isPrivate || false,
+//     color: '#3b82f6',
+//   }
+// }
+
+// export async function fetchRoomMembers(roomName) {
+//   return {
+//     members: [
+//       {
+//         userId: 'user-1',
+//         name: 'Dev User',
+//         email: 'dev@test.com',
+//         role: 'owner',
+//       },
+//     ],
+//   }
+// }
+
+// export async function createInviteLink(roomName) {
+//   return {
+//     inviteUrl: `http://localhost:5173/invite/TEST123?room=${encodeURIComponent(roomName)}`,
+//   }
+// }
+
+// export async function fetchInviteInfo(inviteCode) {
+//   return {
+//     roomName: '테스트 회의실',
+//     inviter: 'Dev User',
+//   }
+// }
+
+// export async function acceptInvite(inviteCode) {
+//   return { ok: true }
+// }
+
+// export async function createRoomInvite(roomName) {
+//   return { ok: true }
+// }
+
+// export async function deleteRoomCalendarEvent(roomName, eventId) {
+//   return { ok: true, roomName, eventId }
+// }
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
+
+async function parseResponse(res) {
+  const data = await res.json().catch(() => null)
 
   if (!res.ok) {
-    throw new Error(data?.detail || data?.message || fallback)
+    const message = data?.detail || data?.message || '요청 처리 중 오류가 발생했습니다.'
+    throw new Error(message)
   }
 
   return data
 }
 
-function normalizeRoom(row, index = 0) {
-  const roomName =
-    row?.room_name ||
-    row?.roomName ||
-    row?.name ||
-    row?.title ||
-    row?.id ||
-    `room_${index + 1}`
-
-  return {
-    ...row,
-    id: row?.id || roomName,
-    room_name: roomName,
-    roomName,
-    name: roomName,
-    title: row?.title || roomName,
-    label: row?.label || row?.title || roomName,
-  }
-}
-
-function normalizeRoomsPayload(data) {
-  const raw =
-    data?.rooms ||
-    data?.channels ||
-    data?.items ||
-    data?.data ||
-    data ||
-    []
-
-  if (!Array.isArray(raw)) {
-    return { ...(data || {}), rooms: [] }
-  }
-
-  return {
-    ...(data || {}),
-    rooms: raw.map(normalizeRoom),
-  }
-}
-
-function resolveRoomName(input) {
-  return typeof input === 'string'
-    ? input
-    : input?.roomName || input?.room_name || input?.name || input?.title || ''
-}
-
 export async function fetchRooms() {
-  try {
-    const data = await request('/rooms', {}, '룸 목록을 불러오지 못했습니다.')
-    return normalizeRoomsPayload(data)
-  } catch (error) {
-    console.warn('[fetchRooms] failed:', error)
-    return { rooms: [] }
-  }
+  const res = await fetch(`${API_BASE}/rooms`, {
+    method: 'GET',
+    credentials: 'include',
+  })
+
+  return parseResponse(res)
 }
 
 export async function createRoom(roomName) {
-  const trimmed = String(resolveRoomName(roomName) || '').trim()
-
-  if (!trimmed) {
-    throw new Error('룸 이름을 입력하세요.')
-  }
-
-  const payload = {
-    room_name: trimmed,
-    roomName: trimmed,
-    name: trimmed,
-    title: trimmed,
-  }
-
-  const data = await request(
-    '/rooms',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
+  const res = await fetch(`${API_BASE}/rooms`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
     },
-    '룸 생성 실패',
-  )
+    credentials: 'include',
+    body: JSON.stringify({ roomName }),
+  })
 
-  if (data?.room) {
-    return {
-      ...data,
-      room: normalizeRoom(data.room),
-    }
-  }
-
-  return normalizeRoom(data)
+  return parseResponse(res)
 }
 
-export async function fetchRoomSessions(roomName) {
-  const resolvedRoomName = resolveRoomName(roomName)
-
-  if (!resolvedRoomName) {
-    return { sessions: [] }
+export async function fetchRoomSessions(roomName, channelId = null) {
+  let url = `${API_BASE}/rooms/${encodeURIComponent(roomName)}/sessions`
+  if (channelId) {
+    url += `?channel_id=${encodeURIComponent(channelId)}`
   }
+  const res = await fetch(url, {
+    method: 'GET',
+    credentials: 'include',
+  })
 
-  try {
-    const data = await request(
-      `/rooms/${encodeURIComponent(resolvedRoomName)}/sessions`,
-      {},
-      '룸 회의 세션을 불러오지 못했습니다.',
-    )
-
-    if (Array.isArray(data)) {
-      return { sessions: data }
-    }
-
-    return {
-      ...(data || {}),
-      sessions: data?.sessions || data?.items || data?.data || [],
-    }
-  } catch (error) {
-    console.warn('[fetchRoomSessions] failed:', error)
-    return { sessions: [] }
-  }
+  return parseResponse(res)
 }
 
 export async function fetchRoomMembers(roomName) {
-  const resolvedRoomName = resolveRoomName(roomName)
+  const res = await fetch(`${API_BASE}/rooms/${encodeURIComponent(roomName)}/members`, {
+    method: 'GET',
+    credentials: 'include',
+  })
 
-  if (!resolvedRoomName) {
-    return { members: [] }
-  }
-
-  try {
-    const data = await request(
-      `/rooms/${encodeURIComponent(resolvedRoomName)}/members`,
-      {},
-      '룸 멤버를 불러오지 못했습니다.',
-    )
-
-    if (Array.isArray(data)) {
-      return { members: data }
-    }
-
-    return {
-      ...(data || {}),
-      members: data?.members || data?.items || data?.data || [],
-    }
-  } catch (error) {
-    console.warn('[fetchRoomMembers] failed:', error)
-    return { members: [] }
-  }
+  return parseResponse(res)
 }
 
 export async function createInviteLink(roomName) {
-  const resolvedRoomName = resolveRoomName(roomName)
+  const res = await fetch(`${API_BASE}/rooms/${encodeURIComponent(roomName)}/invite-link`, {
+    method: 'POST',
+    credentials: 'include',
+  })
 
-  if (!resolvedRoomName) {
-    throw new Error('룸 이름이 없습니다.')
-  }
-
-  return request(
-    `/rooms/${encodeURIComponent(resolvedRoomName)}/invite-link`,
-    {
-      method: 'POST',
-    },
-    '초대 링크 생성 실패',
-  )
+  return parseResponse(res)
 }
 
 export async function fetchInviteInfo(inviteCode) {
-  return request(
-    `/rooms/invite/${encodeURIComponent(inviteCode)}`,
-    {},
-    '초대 정보를 불러오지 못했습니다.',
-  )
+  const res = await fetch(`${API_BASE}/rooms/invite/${encodeURIComponent(inviteCode)}`, {
+    method: 'GET',
+    credentials: 'include',
+  })
+
+  return parseResponse(res)
 }
 
 export async function acceptInvite(inviteCode) {
-  return request(
-    '/rooms/invite/accept',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        invite_code: inviteCode,
-        inviteCode,
-      }),
+  const res = await fetch(`${API_BASE}/rooms/invite/accept`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
     },
-    '초대 수락 실패',
-  )
+    credentials: 'include',
+    body: JSON.stringify({ inviteCode }),
+  })
+
+  return parseResponse(res)
 }
-
-export async function fetchChannels() {
-  const data = await fetchRooms()
-  return data?.rooms || []
-}
-
-export async function createChannel(input) {
-  const data = await createRoom(input)
-
-  if (data?.room) {
-    return normalizeRoom(data.room)
+export async function fetchCalendarEvents(roomName, channelId = null) {
+  let url = `${API_BASE}/rooms/${encodeURIComponent(roomName)}/calendar/events`
+  if (channelId) {
+    url += `?channel_id=${encodeURIComponent(channelId)}`
   }
+  const res = await fetch(url, {
+    method: 'GET',
+    credentials: 'include',
+  })
 
-  return normalizeRoom(data)
+  return parseResponse(res)
 }
 
-export async function fetchCalendarEvents(roomName, options = {}) {
-  const resolvedRoomName = resolveRoomName(roomName)
-  const query = new URLSearchParams()
-
-  query.set('scope', options.scope || 'all')
-  query.set('week_label', options.weekLabel || options.week_label || 'all')
-
-  if (resolvedRoomName && resolvedRoomName !== 'default_room') {
-    query.set('room_name', resolvedRoomName)
+export async function createCalendarEvent(roomName, channelId, eventData) {
+  let url = `${API_BASE}/rooms/${encodeURIComponent(roomName)}/calendar/events`
+  if (channelId) {
+    url += `?channel_id=${encodeURIComponent(channelId)}`
   }
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify(eventData),
+  })
 
-  if (options.dateFrom) query.set('date_from', options.dateFrom)
-  if (options.dateTo) query.set('date_to', options.dateTo)
-
-  try {
-    const data = await request(
-      `/todo-calendar/calendar/events?${query.toString()}`,
-      {},
-      '캘린더 일정을 불러오지 못했습니다.',
-    )
-
-    if (Array.isArray(data)) {
-      return data
-    }
-
-    return data?.events || data?.items || data?.data || []
-  } catch (error) {
-    console.warn('[fetchCalendarEvents] failed:', error)
-    return []
-  }
+  return parseResponse(res)
 }
 
-export { API_BASE_URL }
+export async function deleteCalendarEvent(roomName, eventId) {
+  const res = await fetch(`${API_BASE}/rooms/${encodeURIComponent(roomName)}/calendar/events/${encodeURIComponent(eventId)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  return parseResponse(res)
+}
+
+export async function fetchChannels(roomName) {
+  const res = await fetch(`${API_BASE}/rooms/${encodeURIComponent(roomName)}/channels`, {
+    method: 'GET',
+    credentials: 'include',
+  })
+  return parseResponse(res)
+}
+
+export async function createChannel(roomName, channelName, description = '', color = '') {
+  const res = await fetch(`${API_BASE}/rooms/${encodeURIComponent(roomName)}/channels`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ channelName, description, color }),
+  })
+  return parseResponse(res)
+}
+
+export { API_BASE }
