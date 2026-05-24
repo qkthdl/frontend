@@ -712,9 +712,10 @@ def create_calendar_event(
         """
         INSERT INTO calendar_events (
             id, room_name, channel_id, title, start_time, end_time,
-            description, is_private, color, created_by, created_at
+            description, is_private, color, created_by, created_at,
+            scope, start_date, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             event_id,
@@ -727,6 +728,9 @@ def create_calendar_event(
             1 if payload.isPrivate else 0,
             color,
             user_id,
+            now,
+            "personal",
+            payload.startTime.split("T")[0] if "T" in payload.startTime else payload.startTime,
             now,
         ),
     )

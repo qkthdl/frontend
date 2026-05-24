@@ -63,13 +63,37 @@ export default function STTWorkspace({ roomName, channelId, onOpenMeetingReport 
 
     try {
       const data = await getRoomLibraryTree(resolvedRoomName, channelId)
+      if (!data || !data.sessions || data.sessions.length === 0) throw new Error('No data');
       setTree(data)
       setSessions(data.sessions || [])
     } catch (error) {
-      console.error(error)
-      setMessage(error.message || '자료함을 불러오지 못했습니다.')
-      setTree(null)
-      setSessions([])
+      console.warn('Using mock data because server is unreachable or empty:', error)
+      const mockData = {
+        sessions: [
+          {
+            id: 'mock-session-1',
+            title: 'UI 컴포넌트 점검 회의 (Mock)',
+            meetingTime: '45',
+            createdAt: '2026-05-12T10:00:00Z',
+            audioFiles: [{ id: 'audio-1', originalName: 'meeting_audio.m4a', size: 1024 * 1024 * 2.5 }],
+            documents: [{ id: 'doc-1', originalName: '디자인_가이드.pdf', size: 1024 * 1024 * 1.2 }],
+            transcripts: [{ id: 'stt-1', originalName: '회의록_STT.txt', size: 1024 * 15 }],
+            reports: [{ id: 'rep-1', originalName: '회의요약.json', size: 1024 * 2 }]
+          }
+        ],
+        counts: {
+          sessions: 1,
+          allItems: 4,
+          realtimeMeetings: 0,
+          postMeetingRecordings: 1,
+          uploadedKnowledge: 1,
+          analysisOutputs: 1,
+          todoOutputs: 1
+        }
+      };
+      setTree(mockData)
+      setSessions(mockData.sessions)
+      setMessage('서버 연동 실패: 예시(Mock) 데이터를 표시합니다.')
     }
   }
 
